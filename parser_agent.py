@@ -1,55 +1,84 @@
 import ast
+import subprocess
 
 class ASTPromptCompressor:
-    def __init__(self, file_path):
-        self.file_path = file_path
+    def __init__(self, source_file):
+        self.source_file = source_file
 
-    def compress_for_llm(self):
-        """Analyse le code source et extrait uniquement la structure pour économiser les tokens du LLM."""
-        with open(self.file_path, "r") as source:
-            tree = ast.parse(source.read())
+    def extract_skeleton(self):
+        """Lit un fichier Python et extrait uniquement la structure (classes et fonctions)."""
+        print(f"[AST] Parsing {self.source_file} using Python's Abstract Syntax Tree...")
+        with open(self.source_file, "r", encoding="utf-8") as f:
+            code_content = f.read()
 
-        compressed_prompt = f"--- Structure Analysis of {self.file_path} for LLM Context ---\n"
-        
+        # Transformation du code en arbre syntaxique (AST)
+        tree = ast.parse(code_content)
+        skeleton = []
+
+        # On parcourt chaque élément de l'arbre
         for node in ast.walk(tree):
-            # Si l'agent repère une déclaration de classe
             if isinstance(node, ast.ClassDef):
-                compressed_prompt += f"Class Found: {node.name}\n"
-            
-            # Si l'agent repère une fonction ou méthode
+                skeleton.append(f"Class: {node.name}")
             elif isinstance(node, ast.FunctionDef):
-                # Extraction des arguments de la fonction
+                # Récupère les arguments de la fonction
                 args = [arg.arg for arg in node.args.args]
-                compressed_prompt += f"  -> Method: {node.name}({', '.join(args)})\n"
-                
-        return compressed_prompt
+                skeleton.append(f"  Function: {node.name}({', '.join(args)})")
 
-# --- SCRIPT DE TEST ---
+        return "\n".join(skeleton)
+
+    def ask_llm_to_document(self, skeleton_text):
+        """Envoie le squelette compressé à Llama 3.2 pour générer une documentation."""
+        print("[AST] Sending compressed structure to Llama 3.2...")
+        
+        prompt = (
+            f"You are a Senior Software Architect. Read this compressed code skeleton "
+            f"(it only contains class and function names to save memory):\n\n"
+            f"{skeleton_text}\n\n"
+            f"Write a 3-sentence high-level technical summary of what this architecture does. "
+            f"Be concise."
+        )
+
+        try:
+            result = subprocess.run(
+                ['ollama', 'run', 'llama3.2', prompt],
+                capture_output=True, text=True, encoding='utf-8'
+            )
+            return result.stdout.strip()
+        except FileNotFoundError:
+            return "Error: Ollama or Llama 3.2 not responding."
+
+# --- ZONE DE TEST LIVE ---
 if __name__ == "__main__":
-    # Étape 1: Création d'un faux code source Python complexe avec classes et fonctions
+    # 1. On génère un gros fichier de code complexe fictif pour notre test
     complex_code = """
-class DataPipeline:
-    def __init__(self, source_url):
-        self.source = source_url
+class DatabaseManager:
+    def __init__(self, db_url):
+        self.db_url = db_url
+    
+    def connect(self):
+        # Imagine 50 lignes de code complexe ici
+        print("Connected to DB")
         
-    def fetch_data(self):
-        # Imagine 100 lignes de logique complexe ici
-        pass
-        
-    def process_language_model(self, model_name, token_limit):
-        # Logique complexe d'agent de traitement
+    def save_user(self, user_id, data):
+        # Imagine 100 lignes de calculs ici
         return True
+
+class PaymentGateway:
+    def process_transaction(self, amount, currency):
+        # Code secret et complexe de paiement
+        return "SUCCESS"
 """
-    with open("complex_source.py", "w") as f:
+    
+    with open("complex_system.py", "w", encoding="utf-8") as f:
         f.write(complex_code)
-        
-    # Étape 2: Notre agent compresse ce fichier pour le rendre "LLM-Ready"
-    compressor = ASTPromptCompressor("complex_source.py")
-    result_prompt = compressor.compress_for_llm()
+
+    # 2. On lance notre agent de compression
+    compressor = ASTPromptCompressor("complex_system.py")
     
-    print(result_prompt)
+    # Étape AST
+    compressed_structure = compressor.extract_skeleton()
+    print(f"\n--- COMPRESSED STRUCTURE SENT TO LLM ---\n{compressed_structure}\n----------------------------------------\n")
     
-    # Nettoyage
-    import os
-    if os.path.exists("complex_source.py"):
-        os.remove("complex_source.py")
+    # Étape LLM
+    summary = compressor.ask_llm_to_document(compressed_structure)
+    print(f"--- LLM ARCHITECTURE SUMMARY ---\n{summary}\n--------------------------------")
